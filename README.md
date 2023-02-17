@@ -1,4 +1,4 @@
-![menu](hitta-clotheshop/client/menu.png)
+# Clothes Shop by HiTTA
 
 **Features**
 
@@ -16,3 +16,6 @@
 * ESX or QB
 * [NativeUILua_Reloaded](https://forum.cfx.re/uploads/short-url/yoOXmax3kpndY53KqSASSSfiMf3.zip))
 * [skinchanger](https://github.com/mitlight/skinchanger))
+
+Menu:
+![menu](hitta-clotheshop/client/menu.png)
