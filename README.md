@@ -1,6 +1,7 @@
 Hey guys,
 
 with this script I want to present hitta-clothesshop!
+![menu](hitta-clotheshop/client/menu.png)
 
 **Features**
 
