@@ -1,710 +1,738 @@
-ESX = nil
-local PlayerData = {}
-local _menuPool = NativeUI.CreatePool()
-local mainMenu = nil
-local menuWallpaper = 'shopui_title_highendfashion'
-
-local cam            = nil
-local isCameraActive = false
-local zoomOffset     = 0.0
-local camOffset      = 0.0
-local heading        = 180.0
-
-local isNearShop = false
-local isInShop = false
-local isPedLoaded = false
-local npc = nil
-local hasBought = false
-local wasInMenu = false
-
-local LastSkin = nil
-local torsoData = {}
-
-Citizen.CreateThread(function()
-    while ESX == nil do
-      TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-      Citizen.Wait(0)
-    end
-    
-    PlayerData = ESX.GetPlayerData()
-    
-end)
-
-local ped = Config.NormalShopPed
-Citizen.CreateThread(function()
-
-	while true do
-		Citizen.Wait(300)
-
-		local playerPed = PlayerPedId()
-        local playerloc = GetEntityCoords(playerPed, 0)
-
-		isNearShop = false
-		isInShop = false
-
-		for k, loc in pairs(Config.Shops) do
-			local distance = Vdist(playerloc, loc.x, loc.y, loc.z)
-
-			if distance < 30 then
-				isNearShop = true
-                if not isPedLoaded then
-                    
-                    if loc.type == 'HAT' then
-                        ped = Config.HATersShopPed
-                    elseif loc.type == 'MASK' then
-						ped = Config.MaskShopPed
-					end
-					RequestModel(GetHashKey(ped))
-					while not HasModelLoaded(GetHashKey(ped)) do
-						Wait(1)
-					end
-					npc = CreatePed(4, GetHashKey(ped), loc.x, loc.y, loc.z - 1.0, loc.rot, false, true)
-					FreezeEntityPosition(npc, true)	
-					SetEntityHeading(npc, loc.rot)
-					SetEntityInvincible(npc, true)
-					SetBlockingOfNonTemporaryEvents(npc, true)                    
-					isPedLoaded = true
-					
-					ESX.TriggerServerCallback('esx_skin:getPlayerSkin', function(skin)
-						--TriggerEvent('skinchanger:loadSkin', skin)
-						LastSkin = skin
-					end)
-					--[[TriggerEvent('skinchanger:getSkin', function(skin)
-						LastSkin = skin
-					end)--]]
-				end
-			end
-
-			if distance < 2.0 then
-				isInShop = true
-				menuWallpaper = loc.type
-			end
-
-		end
-
-		if (isPedLoaded and not isNearShop) then
-            DeleteEntity(npc)
-			SetModelAsNoLongerNeeded(GetHashKey(ped))
-			isPedLoaded = false
-		end
-		
-		if (wasInMenu and not isInShop) then
-			if not hasBought then
-				TriggerEvent('skinchanger:loadSkin', LastSkin)
-				TriggerEvent('lils_accessoires:setAccessoires')
-			end
-			wasInMenu = false
-		end
-		
-		if cam ~= nil and not _menuPool:IsAnyMenuOpen() then
-			DeleteSkinCam()
-		end
-
-
-	end
-
-end)
-
-Citizen.CreateThread(function()
-
-	while true do
-		Citizen.Wait(1)
-
-		if isInShop then
-			_menuPool:ProcessMenus()
-			showInfobar(Translation[Config.Locale]['press_e_interact'])
-			if IsControlJustReleased(1, 38) then
-				hasBought = false
-                wasInMenu = true
-                if menuWallpaper == 'HAT' then
-                    generateClothesMenu(Config.HATersContent)
-                elseif menuWallpaper == 'MASK' then
-					generateClothesMenu(Config.MaskContent)
-				else
-                    generateClothesMenu(Config.shopContent)
-                end
-			end
-		else
-			_menuPool:CloseAllMenus()
-		end
-
-		if isCameraActive then
-			if IsControlJustReleased(1, 202) then
-				DeleteSkinCam()
-			end
-        end
-        
-        if mainMenu ~= nil and mainMenu:Visible() then
-            if IsControlJustReleased(1, 191) then
-                mainMenu:Visible(false)
-                DeleteSkinCam()
-                generateConfirmMenu()
-            end
-        end
-	
-	end
-
-end)
-
-Citizen.CreateThread(function()
-	
-	for i=1, #Config.Shops, 1 do
-		if Config.Shops[i].type == 'HAT' then			
-			local blip = AddBlipForCoord(Config.Shops[i].x, Config.Shops[i].y, Config.Shops[i].z)
-
-			SetBlipSprite (blip, 73)
-			SetBlipDisplay(blip, 4)
-			SetBlipScale  (blip, 0.7)
-			SetBlipColour (blip, 7)
-			SetBlipAsShortRange(blip, true)
-
-			BeginTextCommandSetBlipName("STRING")
-			AddTextComponentString(Translation[Config.Locale]['blip_haters'])
-			EndTextCommandSetBlipName(blip)
-		elseif Config.Shops[i].type == 'MASK' then
-			local blip = AddBlipForCoord(Config.Shops[i].x, Config.Shops[i].y, Config.Shops[i].z)
-
-			SetBlipSprite (blip, 362)
-			SetBlipDisplay(blip, 4)
-			SetBlipScale  (blip, 0.6)
-			SetBlipColour (blip, 2)
-			SetBlipAsShortRange(blip, true)
-
-			BeginTextCommandSetBlipName("STRING")
-			AddTextComponentString(Translation[Config.Locale]['blip_mask'])
-			EndTextCommandSetBlipName(blip)
-		else
-			local blip = AddBlipForCoord(Config.Shops[i].x, Config.Shops[i].y, Config.Shops[i].z)
-
-			SetBlipSprite (blip, 73)
-			SetBlipDisplay(blip, 4)
-			SetBlipScale  (blip, 0.6)
-			SetBlipColour (blip, 26)
-			SetBlipAsShortRange(blip, true)
-
-			BeginTextCommandSetBlipName("STRING")
-			AddTextComponentString(Translation[Config.Locale]['blip_normal'])
-			EndTextCommandSetBlipName(blip)
-		end
-	end
-
-end)
-
-function ShowNotification(text)
-	SetNotificationTextEntry('STRING')
-    AddTextComponentString(text)
-	DrawNotification(false, true)
-end
-
-function showInfobar(msg)
-
-	CurrentActionMsg  = msg
-	SetTextComponentFormat('STRING')
-	AddTextComponentString(CurrentActionMsg)
-	DisplayHelpTextFromStringLabel(0, 0, 1, -1)
-
-end
-
-local confirmMenu = nil
-
-function generateConfirmMenu()
-
-	if confirmMenu ~= nil and confirmMenu:Visible() then
-		confirmMenu:Visible(false)
-	end
-
-    confirmMenu = NativeUI.CreateMenu(Translation[Config.Locale]['menu_buy_clothes'], nil)
-    _menuPool:Add(confirmMenu)
-    local buy = NativeUI.CreateItem(Translation[Config.Locale]['menu_confirm'], '~b~')
-    buy:RightLabel('~g~' .. Config.Price .. '.00$')
-    local abort = NativeUI.CreateItem(Translation[Config.Locale]['menu_abort'], '~b~')
-    abort:SetRightBadge(BadgeStyle.Alert)
-
-    confirmMenu:AddItem(buy)
-    confirmMenu:AddItem(abort)
-
-    confirmMenu.OnItemSelect = function(sender, item, index)
-
-        if item == buy then
-            TriggerServerEvent('hitta-clotheshop:buy')
-        elseif item == abort then
-            _menuPool:CloseAllMenus()
-        end
-
-    end
-
-    confirmMenu:Visible(true)
-	_menuPool:MouseControlsEnabled (false)
-	_menuPool:MouseEdgeEnabled (false)
-	_menuPool:ControlDisablingEnabled(false)
-
-end
-
-local variationValues
-local Component2ListItem
-
-function generateClothesMenu(content)
-	
-	if mainMenu ~= nil and mainMenu:Visible() then
-		mainMenu:Visible(false)
-	end
-	
-	selectedIndex = 1
-	
-    _menuPool:Remove()
-    _menuPool:RefreshIndex()
-    mainMenu = NativeUI.CreateMenu(nil, nil, nil)
-
-    if content == Config.shopContent then
-        local background = Sprite.New(menuWallpaper, menuWallpaper, 0, 0, 431, 38)
-        mainMenu:SetBannerSprite(background, true)
-    else
-        mainMenu = NativeUI.CreateMenu(Translation[Config.Locale]['title_haters'], nil, nil)
-    end
-    _menuPool:Add(mainMenu)
-
-    --print('sex: ' .. LastSkin.sex)
-
-    if LastSkin.sex == 0 then
-        torsoData = Config.MaleTorsoData
-    elseif LastSkin.sex == 1 then
-        torsoData = Config.FemaleTorsoData
-    end
-
-    if Config.enableSavedOutfits then
-        local savedOutfits_sub = _menuPool:AddSubMenu(mainMenu, Translation[Config.Locale]['saved_outfits'])
-        local background = Sprite.New(menuWallpaper, menuWallpaper, 0, 0, 431, 38)
-		if content == Config.shopContent then
-			savedOutfits_sub.SubMenu:SetBannerSprite(background, true)
-		end
-        if Config.useMyClothesAPI then
-            ESX.TriggerServerCallback('clothes:requestData', function(dressing)
-                for i=1, #dressing, 1 do
-                    local dress = _menuPool:AddSubMenu(savedOutfits_sub.SubMenu, dressing[i].name)
-                    local takeOn = NativeUI.CreateItem(Translation[Config.Locale]['outfin_use'], '~b~')
-                    local remove = NativeUI.CreateItem(Translation[Config.Locale]['outfit_remove'], '~b~')
-                    dress.SubMenu:AddItem(takeOn)
-                    dress.SubMenu:AddItem(remove)
-        
-                    savedOutfits_sub.SubMenu.OnIndexChange = function(sender, index)
-                        selectedIndex = index
-                    end
-        
-                    dress.SubMenu.OnItemSelect = function(sender, item, index)
-                        if item == takeOn then
-                            TriggerEvent('skinchanger:getSkin', function(skin)
-        
-                                --ESX.TriggerServerCallback('lils_properties:getPlayerOutfit', function(clothes)
-                    
-                                TriggerEvent('skinchanger:loadClothes', skin, dressing[selectedIndex].clothesData)
-                                TriggerEvent('esx_skin:setLastSkin', skin)
-                
-                                TriggerEvent('skinchanger:getSkin', function(skinnew)
-									TriggerServerEvent('esx_skin:save', skinnew)
-									LastSkin = skinnew
-                                end)
-								
-								hasBought = true
-								
-                    
-                                --end, selectedIndex)
-                    
-                            end)
-                        elseif item == remove then
-                            TriggerServerEvent('clothes:removeOutfit', dressing[selectedIndex].id)
-                            ShowNotification(Translation[Config.Locale]['outfit_removed'] .. dressing[selectedIndex].name .. Translation[Config.Locale]['outfit_removed2'])
-                            _menuPool:CloseAllMenus()
-                        end
-                    end
-                    _menuPool:RefreshIndex()
-                    _menuPool:MouseEdgeEnabled (false)
-                end
-            end)
-        else
-            ESX.TriggerServerCallback('hitta-clotheshop:getPlayerDressing', function(dressing)
-                for i=1, #dressing, 1 do
-                    local dress = _menuPool:AddSubMenu(savedOutfits_sub.SubMenu, dressing[i])
-                    local takeOn = NativeUI.CreateItem(Translation[Config.Locale]['outfin_use'], '~b~')
-                    local remove = NativeUI.CreateItem(Translation[Config.Locale]['outfit_remove'], '~b~')
-                    dress.SubMenu:AddItem(takeOn)
-                    dress.SubMenu:AddItem(remove)
-        
-                    savedOutfits_sub.SubMenu.OnIndexChange = function(sender, index)
-                        selectedIndex = index
-                    end
-        
-                    dress.SubMenu.OnItemSelect = function(sender, item, index)
-                        if item == takeOn then
-                            TriggerEvent('skinchanger:getSkin', function(skin)
-        
-                                ESX.TriggerServerCallback('hitta-clotheshop:getPlayerOutfit', function(clothes)
-                    
-                                    TriggerEvent('skinchanger:loadClothes', skin, clothes)
-                                    TriggerEvent('esx_skin:setLastSkin', skin)
-                    
-                                    TriggerEvent('skinchanger:getSkin', function(skinnew)
-										TriggerServerEvent('esx_skin:save', skinnew)
-										LastSkin = skinnew
-                                    end)
-									
-									hasBought = true
-									
-                    
-                                end, selectedIndex)
-                    
-                            end)
-                        elseif item == remove then
-                            TriggerServerEvent('hitta-clotheshop:removeOutfit', selectedIndex)
-                            ShowNotification(Translation[Config.Locale]['outfit_removed'] .. dressing[selectedIndex] .. Translation[Config.Locale]['outfit_removed2'])
-                            _menuPool:CloseAllMenus()
-                        end
-                    end
-                    _menuPool:RefreshIndex()
-                    _menuPool:MouseEdgeEnabled (false)
-                end
-            end) --]]
-        end
-    end
-
-    local menuItems = {}
-    local componentValues = {}
-    for k, v in pairs(content) do
-        componentValues[v.name] = {}
-
-        local amountOfComponents
-        if v.type == 1 then
-            amountOfComponents = GetNumberOfPedDrawableVariations(GetPlayerPed(-1), v.componentID)-1
-        else
-            amountOfComponents = GetNumberOfPedPropDrawableVariations(GetPlayerPed(-1), v.componentID)-1
-        end
-        
-        if v.name == 'ears_1' or v.name == 'helmet_1' then
-            table.insert(componentValues[v.name], -1)
-        end
-
-        --print('amount of comp:' .. amountOfComponents)
-
-        for i2=0, amountOfComponents-1, 1 do
-			--print(#v.blockedParts[LastSkin.sex])
-            if v.blockedParts[LastSkin.sex] ~= nil and #v.blockedParts[LastSkin.sex] > 0 then
-                for j2, blockedNumber in pairs(v.blockedParts[LastSkin.sex]) do
-                    if i2 == blockedNumber then
-
-                        --print(i2 .. ' is blocked')
-                        break
-                    elseif j2 == #v.blockedParts[LastSkin.sex] then
-                        table.insert(componentValues[v.name], i2)
-                        --print(i2 .. ' is free')
-                    end
-                end
-            else
-                table.insert(componentValues[v.name], i2)
-            end
-            
-        end
-
-        --print('after block: ' .. #componentValues[v.name])
-        local finalIndex = LastSkin[v.name]
-        for findIndexCount, findIndexData in pairs(componentValues[v.name]) do
-            if findIndexData == LastSkin[v.name] then
-                finalIndex = findIndexCount
-                break
-            end
-        end
-		local newValues = {}
-		for i=1, #componentValues[v.name], 1 do
-			table.insert(newValues, i)
-		end
-        local Component1ListItem = NativeUI.CreateListItem('~o~→ ~s~' .. v.label, componentValues[v.name], finalIndex)
-        mainMenu:AddItem(Component1ListItem)
-        table.insert(menuItems, {
-            item = Component1ListItem,
-            type = 1,
-            data = v})
-
-
-        if v.name2 ~= nil then
-            variationValues = {}
-            local amountOfVariations
-            if v.type == 1 then
-                amountOfVariations = GetNumberOfPedTextureVariations(GetPlayerPed(-1), v.componentID, LastSkin[v.name])
-            else
-                amountOfVariations = GetNumberOfPedPropTextureVariations(PlayerPedId(-1), v.componentID, LastSkin[v.name])
-            end
-            for i2=0, amountOfVariations, 1 do
-                table.insert(variationValues, i2)
-            end
-            --print(amountOfVariations)
-            Component2ListItem = NativeUI.CreateListItem(Translation[Config.Locale]['change_colour'], variationValues, LastSkin[v.name2])
-            mainMenu:AddItem(Component2ListItem)
-
-            menuItems[#menuItems].parent = Component2ListItem
-            table.insert(menuItems, {
-                item = Component2ListItem,
-                type = 2,
-                data = v})
-
-        end
-        mainMenu.OnListChange = function(sender, item, index)
-            local selectedIndex = index 
-            print(selectedIndex)
-            --local selectedIndex = index - 1
-
-            for k2, v2 in pairs(menuItems) do
-                if v2.item == item then
-                    --[[if v2.data.name == 'ears_1' or v2.data.name == 'helmet_1' then
-                        selectedIndex = selectedIndex - 1
-                    end--]]
-                    if v2.type == 1 then
-                        if v2.data.name ~= "arms" then
-						  TriggerEvent('skinchanger:change', v2.data.name2, 0)
-						end
-                        TriggerEvent('skinchanger:change', v2.data.name, componentValues[v2.data.name][selectedIndex])
-                        print(componentValues[v2.data.name][selectedIndex])
-
-                        CreateSkinCam()
-                        zoomOffset = v2.data.zoomOffset
-                        camOffset = v2.data.camOffset
-
-                        if v2.parent ~= nil then
-
-                            variationValues = {}
-                            local amountOfVariations
-                            if v2.data.type == 1 then
-                                amountOfVariations = GetNumberOfPedTextureVariations(GetPlayerPed(-1), v2.data.componentID, componentValues[v2.data.name][selectedIndex])
-                            else
-                                amountOfVariations = GetNumberOfPedPropTextureVariations(PlayerPedId(-1), v2.data.componentID, componentValues[v2.data.name][selectedIndex])
-                            end
-                            for i3=0, amountOfVariations, 1 do
-                                table.insert(variationValues, i3)
-                            end
-                            v2.parent._Index = 1
-                            v2.parent.Items = variationValues
-                           -- print('Variation Values updated to ' .. #variationValues)
-                        end
-
-                        if v2.data.componentID == 11 then
-                            if torsoData[componentValues[v2.data.name][selectedIndex]] ~= nil then
-                                TriggerEvent('skinchanger:change', 'arms', torsoData[componentValues[v2.data.name][selectedIndex]].arms)
-                                TriggerEvent('skinchanger:change', 'tshirt_2', 0)
-                                TriggerEvent('skinchanger:change', 'tshirt_1', torsoData[componentValues[v2.data.name][selectedIndex]].validShirts[1])
-                            end
-            
-                        end
-                    elseif v2.type == 2 then
-                        TriggerEvent('skinchanger:change', v2.data.name2, selectedIndex-1)
-                    end
-
-                    break
-                end
-            end
-
-        end
-    end
-
-    mainMenu:Visible(true)
-	_menuPool:MouseControlsEnabled (false)
-	_menuPool:MouseEdgeEnabled (false)
-	_menuPool:ControlDisablingEnabled(false)
-
-
-end
-
-function CreateSkinCam()
-	local playerPed = GetPlayerPed(-1)
-
-	if not isCameraActive then
-		if not DoesCamExist(cam) then
-			cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true)
-		end
-		SetCamActive(cam, true)
-		RenderScriptCams(true, true, 500, true, true)
-		isCameraActive = true
-		SetCamRot(cam, 0.0, 0.0, 270.0, true)
-		SetEntityHeading(playerPed, 90.0)
-	end
-end
-	
-function DeleteSkinCam()
-	isCameraActive = false
-	SetCamActive(cam, false)
-	RenderScriptCams(false, true, 500, true, true)
-	cam = nil
-end
-
-function CreateDialog(OnScreenDisplayTitle_shopmenu) --general OnScreenDisplay for KeyboardInput
-	AddTextEntry(OnScreenDisplayTitle_shopmenu, OnScreenDisplayTitle_shopmenu)
-	DisplayOnscreenKeyboard(1, OnScreenDisplayTitle_shopmenu, "", "", "", "", "", 32)
-	while (UpdateOnscreenKeyboard() == 0) do
-		DisableAllControlActions(0);
-		Wait(0);
-	end
-	if (GetOnscreenKeyboardResult()) then
-		local displayResult = GetOnscreenKeyboardResult()
-		return displayResult
-	end
-end
-
-
-RegisterNetEvent('hitta-clotheshop:confirm')
-AddEventHandler('hitta-clotheshop:confirm', function(enoughMoney)
-
-	_menuPool:CloseAllMenus()
-
-	if enoughMoney then
-		TriggerEvent('skinchanger:getSkin', function(skin)
-
-			if LastSkin['helmet_1'] ~= skin['helmet_1'] or LastSkin['helmet_2'] ~= skin['helmet_2'] then
-                --TriggerServerEvent('accessoires:updateAccessoire', 'helmet', skin['helmet_1'], skin['helmet_2'])
-				if Config.ForceAccessoiresDelete then
-					TriggerEvent('skinchanger:change', 'helmet_1', -1)
-				end
-                TriggerServerEvent('esx_accessories:save', skin, 'Helmet')
-			end
-			
-			if LastSkin['ears_1'] ~= skin['ears_1'] or LastSkin['ears_2'] ~= skin['ears_2'] then
-                --TriggerServerEvent('accessoires:updateAccessoire', 'ears', skin['ears_1'], skin['ears_2'])
-				if Config.ForceAccessoiresDelete then
-					TriggerEvent('skinchanger:change', 'ears_1', -1)
-				end
-                TriggerServerEvent('esx_accessories:save', skin, 'Ears')
-			end
-			
-			if LastSkin['glasses_1'] ~= skin['glasses_1'] or LastSkin['glasses_2'] ~= skin['glasses_2'] then
-                --TriggerServerEvent('accessoires:updateAccessoire', 'glasses', skin['glasses_1'], skin['glasses_2'])
-				if Config.ForceAccessoiresDelete then
-					TriggerEvent('skinchanger:change', 'glasses_1', 0)
-				end
-                TriggerServerEvent('esx_accessories:save', skin, 'Glasses')
-			end
-			
-			if LastSkin['mask_1'] ~= skin['mask_1'] or LastSkin['mask_2'] ~= skin['mask_2'] then
-                --TriggerServerEvent('accessoires:updateAccessoire', 'mask', skin['mask_1'], skin['mask_2'])
-				if Config.ForceAccessoiresDelete then
-					TriggerEvent('skinchanger:change', 'mask_1', 0)
-				end
-                TriggerServerEvent('esx_accessories:save', skin, 'Mask')
-			end
-			
-			--[[if LastSkin['watch_1'] ~= skin['watch_1'] or LastSkin['watch_2'] ~= skin['watch_2'] then
-				TriggerServerEvent('accessoires:updateAccessoire', 'watch', skin['watch_1'], skin['watch_2'])
-			end
-			
-			if LastSkin['chain_1'] ~= skin['chain_1'] or LastSkin['chain_2'] ~= skin['chain_2'] then
-				TriggerServerEvent('accessoires:updateAccessoire', 'chain', skin['chain_1'], skin['chain_1'])
-			end
-			
-			if LastSkin['bags_1'] ~= skin['bags_1'] or LastSkin['bags_2'] ~= skin['bags_2'] then
-				TriggerServerEvent('accessoires:updateAccessoire', 'backpack', skin['bags_1'], skin['bags_2'])
-			end--]]
-			TriggerEvent('skinchanger:getSkin', function(finalSkin)
-				TriggerServerEvent('skin:save', finalSkin)
-				LastSkin = finalSkin
-				
-				if Config.useESXClothesData then
-					ESX.TriggerServerCallback('hitta-clotheshop:checkHavePropertyStore', function(foundStore)
-						if foundStore then
-							local outfitname = CreateDialog('Outfit Name')
-							if tostring(outfitname) then
-								ShowNotification(Translation[Config.Locale]['saved'] .. outfitname .. Translation[Config.Locale]['saved_2'])
-								TriggerServerEvent('hitta-clotheshop:saveOutfit', outfitname, skin)
-								--TriggerServerEvent('clothes:saveOutfit', outfitname, skin)
-							end
-						end
-					end)
-				elseif Config.useMyClothesAPI then
-					local outfitname = CreateDialog('Name des Outfits eingeben')
-						if tostring(outfitname) then
-							ShowNotification(Translation[Config.Locale]['saved'] .. outfitname .. Translation[Config.Locale]['saved_2'])
-							TriggerServerEvent('clothes:saveOutfit', outfitname, skin)
-						end
-				end
-			end)
-            
-		end)
-
-        _menuPool:CloseAllMenus()
-        hasBought = true
-        ShowNotification(Translation[Config.Locale]['buy_complete'])
-
-	else
-		ShowNotification(Translation[Config.Locale]['not_enough_money'])
-		TriggerEvent('skinchanger:loadSkin', LastSkin)
-		TriggerEvent('lils_accessoires:setAccessoires')
-
-	end
-
-end)
-	
-Citizen.CreateThread(function()
-	while true do
-		Citizen.Wait(0)
-		if isCameraActive then
-		DisableControlAction(2, 30, true)
-		DisableControlAction(2, 31, true)
-		DisableControlAction(2, 32, true)
-		DisableControlAction(2, 33, true)
-		DisableControlAction(2, 34, true)
-		DisableControlAction(2, 35, true)
-	
-		DisableControlAction(0, 25,   true) -- Input Aim
-			DisableControlAction(0, 24,   true) -- Input Attack
-	
-		local playerPed = GetPlayerPed(-1)
-		local coords    = GetEntityCoords(playerPed)
-	
-		local angle = heading * math.pi / 180.0
-		local theta = {
-			x = math.cos(angle),
-			y = math.sin(angle)
-		}
-		local pos = {
-			x = coords.x + (zoomOffset * theta.x),
-			y = coords.y + (zoomOffset * theta.y),
-		}
-	
-		local angleToLook = heading - 140.0
-		if angleToLook > 360 then
-			angleToLook = angleToLook - 360
-		elseif angleToLook < 0 then
-			angleToLook = angleToLook + 360
-		end
-		angleToLook = angleToLook * math.pi / 180.0
-		local thetaToLook = {
-			x = math.cos(angleToLook),
-			y = math.sin(angleToLook)
-		}
-		local posToLook = {
-			x = coords.x + (zoomOffset * thetaToLook.x),
-			y = coords.y + (zoomOffset * thetaToLook.y),
-		}
-	
-		SetCamCoord(cam, pos.x, pos.y, coords.z + camOffset)
-		PointCamAtCoord(cam, posToLook.x, posToLook.y, coords.z + camOffset)
-	
-		--SetTextComponentFormat("STRING")
-		--AddTextComponentString(_U('use_rotate_view'))
-		--DisplayHelpTextFromStringLabel(0, 0, 0, -1)
-		end
-	end
-end)
-	
-Citizen.CreateThread(function()
-	local angle = 180
-	while true do
-		Citizen.Wait(0)
-		if isCameraActive then
-		if IsControlPressed(0, 89) then
-			angle = angle - 1
-		elseif IsControlPressed(0, 90) then
-			angle = angle + 1
-		end
-		if angle > 360 then
-			angle = angle - 360
-		elseif angle < 0 then
-			angle = angle + 360
-		end
-		heading = angle + 0.0
-		end
-	end
-end)
+Config = {}
+Translation = {}
+
+Config.Locale = 'en'
+
+Config.useESXClothesData = true -- Clothing is saved in esx_addonaccount. 
+
+Config.enableSavedOutfits = true -- Should the player able to access saved clothes
+
+Config.ForceAccessoiresDelete = false -- removes accessoires when saving the char to make it work with the esx_accessoires menu
+
+Config.Price = 89.00
+
+Config.NormalShopPed = "s_f_m_fembarber"
+Config.HATersShopPed = "a_f_y_runner_01"
+Config.MaskShopPed   = "u_m_y_pogo_01"
+
+Config.NormalBlipColour = 4
+
+Config.Shops = { 
+    {type = 'shopui_title_highendfashion', x = -164.94119262695, y = -302.57022094727, z = 39.733283996582, rot = 249.01162719727},
+    {type = 'shopui_title_lowendfashion', x = 73.976188659668, y = -1392.4613037109, z = 29.376148223877, rot = 269.44592285156},
+    {type = 'shopui_title_highendfashion', x = -708.56243896484, y = -151.98893737793, z = 37.415138244629, rot = 115.29697418213},
+    {type = 'shopui_title_lowendfashion2', x = 427.12158203125, y = -806.90734863281, z = 29.491146087646, rot = 93.260101318359},
+    {type = 'shopui_title_lowendfashion2', x = -822.896484375, y = -1071.9536132813, z = 11.32811164856, rot = 204.75247192383},
+    {type = 'shopui_title_highendfashion', x = -1449.1019287109, y = -238.50553894043, z = 49.813743591309, rot = 50.546726226807},
+    {type = 'shopui_title_lowendfashion2', x = 5.5428671836853, y = 6510.9501953125, z = 31.877834320068, rot = 45.513442993164},
+    {type = 'shopui_title_lowendfashion2', x = -822.896484375, y = -1071.9536132813, z = 11.32811164856, rot = 204.75247192383},
+    {type = 'shopui_title_midfashion', x = 127.06841278076, y = -224.28421020508, z = 54.55782699585, rot = 69.159606933594},
+    {type = 'shopui_title_lowendfashion2', x = 1695.4453125, y = 4822.890625, z = 42.063125610352, rot = 93.038833618164},
+    {type = 'shopui_title_midfashion', x = 612.69256591797, y = 2762.6242675781, z = 42.088088989258, rot = 272.66879272461},
+    {type = 'shopui_title_lowendfashion2', x = 1196.9788818359, y = 2711.7102050781, z = 38.222637176514, rot = 183.91091918945},
+    {type = 'shopui_title_midfashion', x = -1194.1501464844, y = -766.68597412109, z = 17.315553665161, rot = 217.00065612793},
+    {type = 'shopui_title_midfashion', x = -3169.0966796875, y = 1043.171875, z = 20.863214492798, rot = 61.406246185303},
+    {type = 'shopui_title_lowendfashion', x = -1102.4339599609, y = 2711.7355957031, z = 19.10786819458, rot = 227.7255859375},
+    {type = 'MASK', x = -1337.1248779297, y = -1278.2264404297, z = 4.8689041137695, rot = 118.77864837646},
+}
+
+Config.shopContent = { -- normal shop
+
+  {componentID = 11, name = 'torso_1', name2 = 'torso_2', label = 'Torso', zoomOffset = 0.75, camOffset = 0.15, type = 1, 
+  blockedParts = {
+  [0] = {1,4,5},
+  [1] = {1,4,5}}}, -- 0 = male; 1 = female
+  {componentID = 8, name = 'tshirt_1', name2 = 'tshirt_2', label = 'T-Shirts', zoomOffset = 0.75, camOffset = 0.15, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 3, name = 'arms', name2 = nil, label = 'Arms', zoomOffset = 0.75, camOffset = 0.15, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 4, name = 'pants_1', name2 = 'pants_2', label = 'Pants', zoomOffset = 0.8, camOffset = -0.5, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 6, name = 'shoes_1', name2 = 'shoes_2', label = 'Shoes', zoomOffset = 0.8, camOffset = -0.8, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 7, name = 'chain_1', name2 = 'chain_2', label = 'Chain', zoomOffset = 1.0, camOffset = 0.45, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 1, name = 'glasses_1', name2 = 'glasses_2', label = 'Glasses', zoomOffset = 0.6, camOffset = 0.65, type = 2, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 2, name = 'ears_1', name2 = 'ears_2', label = 'Ear accessoires', zoomOffset = 0.4, camOffset = 0.65, type = 2, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 5, name = 'bags_1', name2 = 'bags_2', label = 'Bags', zoomOffset = 0.75, camOffset = 0.15, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  {componentID = 0, name = 'helmet_1', name2 = 'helmet_2', label = 'Helmet', zoomOffset = 0.6, camOffset = 0.65, type = 2, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  --{componentID = 6, name = 'watch_1', name2 = 'watch_2', label = 'Watch', zoomOffset = 0.8, camOffset = 0.1, type = 2},
+  {componentID = 1, name = 'bproof_1', name2 = 'bproof_2', label = 'Body Armour & Accessories', zoomOffset = 0.6, camOffset = 0.25, type = 2,
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+  
+}
+
+Config.MaskContent = {
+  {componentID = 1, name = 'mask_1', name2 = 'mask_2', label = 'Mask', zoomOffset = 0.6, camOffset = 0.65, type = 1, 
+  blockedParts = {
+  [0] = {},
+  [1] = {}}}, -- 0 = male; 1 = female
+}
+
+
+Translation = {
+  ['de'] = {
+    ['press_e_interact'] = 'Drücke ~g~E~s~, um mit der Verkäufer zu sprechen',
+    ['blip_normal'] = 'Kleidungsladen',
+    ['blip_haters'] = 'HATers Shop',
+    ['blip_mask'] = 'Vespucci Maskenladen',
+    ['menu_buy_clothes'] = 'Klamotten kaufen?',
+    ['menu_confirm'] = 'Bestätigen',
+    ['menu_abort'] = 'Abbrechen',
+    ['title_haters'] = 'Accessoires Shop',
+    ['change_colour'] = '~s~Farbe ändern',
+    ['saved'] = '~g~Outfit ~w~',
+    ['saved_2'] = '~g~ gespeichert.',
+    ['not_enough_money'] = '~r~Du hast nicht genügend Geld.',
+    ['buy_complete'] = '~y~Verkäuferin~s~: Vielen Dank für Ihren Einkauf und bis zum nächsten Mal.',
+    ['outfin_use'] = 'Klamotten anziehen',
+    ['outfit_remove'] = 'Klamotten löschen',
+    ['outfit_removed'] = 'Das Outfit ~y~',
+    ['outfit_removed2'] = ' ~s~wurde gelöscht.',
+    ['saved_outfits'] = 'Gespeicherte Outfits',
+  },
+  ['en'] = {
+    ['press_e_interact'] = 'Press ~g~E~s~, to change clothes',
+    ['blip_normal'] = 'Clothes shop',
+    ['blip_haters'] = 'HATers shop',
+    ['blip_mask'] = 'Vespucci masks',
+    ['menu_buy_clothes'] = 'Buy clothes?',
+    ['menu_confirm'] = 'Confirm',
+    ['menu_abort'] = 'Abort',
+    ['title_haters'] = 'Accessoires shop',
+    ['change_colour'] = '~s~Change variation',
+    ['saved'] = '~g~Outfit ~w~',
+    ['saved_2'] = '~g~ was saved.',
+    ['not_enough_money'] = '~r~You do not have enough money.',
+    ['buy_complete'] = '~y~Seller~s~: Thank you for your purchase and see you next time.',
+    ['outfin_use'] = 'Put on clothes',
+    ['outfit_remove'] = 'Remove clothes',
+    ['outfit_removed'] = 'The outfit ~y~',
+    ['outfit_removed2'] = ' ~s~was removed.',
+    ['saved_outfits'] = 'Saved outfits',
+  }
+}
+
+
+Config.MaleTorsoData = {
+  [0] = {arms = 0, validShirts = {15}},
+  [1] = {arms = 0, validShirts = {15}},
+  [2] = {arms = 2, validShirts = {15}},
+  [3] = {arms = 6, validShirts = {0}},
+  [4] = {arms = 12, validShirts = {0}},
+  [5] = {arms = 5, validShirts = {15}},
+  [6] = {arms = 1, validShirts = {24}},
+  [7] = {arms = 1, validShirts = {0}},
+  [8] = {arms = 8, validShirts = {15}},
+  [9] = {arms = 0, validShirts = {15}},
+  [10] = {arms = 4, validShirts = {28}},
+  [11] = {arms = 4, validShirts = {22}},
+  [12] = {arms = 1, validShirts = {15}},
+  [13] = {arms = 11, validShirts = {15}},
+  [14] = {arms = 6, validShirts = {15}},
+  [15] = {arms = 15, validShirts = {15}},
+  [16] = {arms = 0, validShirts = {15}},
+  [17] = {arms = 5, validShirts = {15}},
+  [18] = {arms = 0, validShirts = {15}},
+  [19] = {arms = 1, validShirts = {20}},
+  [20] = {arms = 1, validShirts = {13}},
+  [21] = {arms = 11, validShirts = {6}},
+  [22] = {arms = 0, validShirts = {15}},
+  [23] = {arms = 12, validShirts = {11}},
+  [24] = {arms = 12, validShirts = {12}},
+  [25] = {arms = 11, validShirts = {7}},
+  [26] = {arms = 11, validShirts = {15}},
+  [27] = {arms = 1, validShirts = {12}},
+  [28] = {arms = 1, validShirts = {12}},
+  [29] = {arms = 12, validShirts = {31}},
+  [30] = {arms = 12, validShirts = {32}},
+  [31] = {arms = 12, validShirts = {32}},
+  [32] = {arms = 12, validShirts = {32}},
+  [33] = {arms = 0, validShirts = {15}},
+  [34] = {arms = 0, validShirts = {15}},
+  [35] = {arms = 4, validShirts = {28}},
+  [36] = {arms = 5, validShirts = {15}},
+  [37] = {arms = 6, validShirts = {18}},
+  [38] = {arms = 8, validShirts = {15}},
+  [39] = {arms = 0, validShirts = {15}},
+  [40] = {arms = 4, validShirts = {22}},
+  [41] = {arms = 6, validShirts = {15}},
+  [42] = {arms = 11, validShirts = {15}},
+  [43] = {arms = 11, validShirts = {15}},
+  [44] = {arms = 0, validShirts = {15}},
+  [45] = {arms = 0, validShirts = {50}},
+  [46] = {arms = 6, validShirts = {17}},
+  [47] = {arms = 0, validShirts = {15}},
+  [48] = {arms = 1, validShirts = {72}},
+  [49] = {arms = 1, validShirts = {15}},
+  [50] = {arms = 1, validShirts = {15}},
+  [51] = {arms = 1, validShirts = {15}},
+  [52] = {arms = 2, validShirts = {15}},
+  [53] = {arms = 1, validShirts = {15}},
+  [54] = {arms = 1, validShirts = {74}},
+  [55] = {arms = 0, validShirts = {15}},
+  [56] = {arms = 0, validShirts = {15}},
+  [57] = {arms = 0, validShirts = {15}},
+  [58] = {arms = 1, validShirts = {9}},
+  [59] = {arms = 1, validShirts = {63}},
+  [60] = {arms = 11, validShirts = {10}},
+  [61] = {arms = 11, validShirts = {15}},
+  [62] = {arms = 6, validShirts = {23}},
+  [63] = {arms = 0, validShirts = {15}},
+  [64] = {arms = 1, validShirts = {18}},
+  [65] = {arms = 14, validShirts = {15}},
+  [66] = {arms = 8, validShirts = {15}}, --
+  [67] = {arms = 6, validShirts = {15}}, --
+  [68] = {arms = 0, validShirts = {14}},
+  [69] = {arms = 0, validShirts = {14}},
+  [70] = {arms = 1, validShirts = {12}},
+  [71] = {arms = 0, validShirts = {15}},
+  [72] = {arms = 0, validShirts = {16}},
+  [73] = {arms = 0, validShirts = {15}},
+  [74] = {arms = 0, validShirts = {16}},
+  [75] = {arms = 0, validShirts = {15}},
+  [76] = {arms = 0, validShirts = {21}},
+  [77] = {arms = 1, validShirts = {1}},
+  [78] = {arms = 1, validShirts = {15}},
+  [79] = {arms = 1, validShirts = {15}},
+  [80] = {arms = 2, validShirts = {15}},
+  [81] = {arms = 0, validShirts = {15}},
+  [82] = {arms = 0, validShirts = {15}},
+  [83] = {arms = 0, validShirts = {15}},
+  [84] = {arms = 0, validShirts = {15}},
+  [85] = {arms = 0, validShirts = {15}},
+  [86] = {arms = 0, validShirts = {15}},
+  [87] = {arms = 0, validShirts = {15}},
+  [88] = {arms = 1, validShirts = {16}},
+  [89] = {arms = 1, validShirts = {15}},
+  [90] = {arms = 1, validShirts = {15}},
+  [91] = {arms = 15, validShirts = {15}},
+  [92] = {arms = 14, validShirts = {15}},
+  [93] = {arms = 0, validShirts = {15}},
+  [94] = {arms = 0, validShirts = {15}},
+  [95] = {arms = 11, validShirts = {15}},
+  [96] = {arms = 11, validShirts = {15}},
+  [97] = {arms = 0, validShirts = {15}},
+  [98] = {arms = 0, validShirts = {15}},
+  [99] = {arms = 4, validShirts = {31}},
+  [100] = {arms = 4, validShirts = {31}},
+  [101] = {arms = 4, validShirts = {31}},
+  [102] = {arms = 4, validShirts = {31}},
+  [103] = {arms = 4, validShirts = {31}},
+  [104] = {arms = 4, validShirts = {31}},
+  [105] = {arms = 2, validShirts = {15}},
+  [106] = {arms = 1, validShirts = {16}},
+  [107] = {arms = 1, validShirts = {15}},
+  [108] = {arms = 14, validShirts = {15}},
+  [109] = {arms = 5, validShirts = {15}},
+  [110] = {arms = 4, validShirts = {15}},
+  [111] = {arms = 4, validShirts = {15}},
+  [112] = {arms = 4, validShirts = {31}},
+  [113] = {arms = 6, validShirts = {15}},
+  [114] = {arms = 14, validShirts = {15}},
+  [115] = {arms = 14, validShirts = {16}},
+  [116] = {arms = 14, validShirts = {15}},
+  [117] = {arms = 14, validShirts = {15}},
+  [118] = {arms = 14, validShirts = {16}},
+  [119] = {arms = 14, validShirts = {13}},
+  [120] = {arms = 11, validShirts = {6}},
+  [121] = {arms = 11, validShirts = {15}},
+  [122] = {arms = 6, validShirts = {16}},
+  [123] = {arms = 0, validShirts = {15}},
+  [124] = {arms = 1, validShirts = {16}},
+  [125] = {arms = 1, validShirts = {15}},
+  [126] = {arms = 1, validShirts = {15}},
+  [127] = {arms = 1, validShirts = {16}},
+  [128] = {arms = 8, validShirts = {15}},
+  [129] = {arms = 1, validShirts = {15}},
+  [130] = {arms = 12, validShirts = {16}},
+  [131] = {arms = 0, validShirts = {15}},
+  [132] = {arms = 0, validShirts = {15}},
+  [133] = {arms = 11, validShirts = {15}},
+  [134] = {arms = 11, validShirts = {15}},
+  [135] = {arms = 11, validShirts = {15}},
+  [136] = {arms = 8, validShirts = {23}},
+  [137] = {arms = 11, validShirts = {6}},
+  [138] = {arms = 11, validShirts = {15}},
+  [139] = {arms = 4, validShirts = {15}},
+  [140] = {arms = 4, validShirts = {31}},
+  [141] = {arms = 6, validShirts = {15}},
+  [142] = {arms = 6, validShirts = {16}},
+  [143] = {arms = 6, validShirts = {15}},
+  [144] = {arms = 6, validShirts = {15}},
+  [145] = {arms = 14, validShirts = {15}},
+  [146] = {arms = 0, validShirts = {15}},
+  [147] = {arms = 4, validShirts = {15}},
+  [148] = {arms = 4, validShirts = {15}},
+  [149] = {arms = 14, validShirts = {15}},
+  [150] = {arms = 14, validShirts = {15}},
+  [151] = {arms = 14, validShirts = {16}},
+  [152] = {arms = 14, validShirts = {15}},
+  [153] = {arms = 14, validShirts = {15}},
+  [154] = {arms = 14, validShirts = {15}},
+  [155] = {arms = 14, validShirts = {15}},
+  [156] = {arms = 14, validShirts = {16}},
+  [157] = {arms = 0, validShirts = {103}},
+  [158] = {arms = 15, validShirts = {15}},
+  [159] = {arms = 15, validShirts = {15}},
+  [160] = {arms = 15, validShirts = {16}},
+  [161] = {arms = 14, validShirts = {14}},
+  [162] = {arms = 15, validShirts = {15}},
+  [163] = {arms = 14, validShirts = {16}},
+  [164] = {arms = 11, validShirts = {15}},
+  [165] = {arms = 15, validShirts = {15}},
+  [166] = {arms = 12, validShirts = {16}},
+  [167] = {arms = 12, validShirts = {16}},
+  [168] = {arms = 14, validShirts = {2}},
+  [169] = {arms = 14, validShirts = {16}},
+  [170] = {arms = 5, validShirts = {16}},
+  [171] = {arms = 6, validShirts = {15}},
+  [172] = {arms = 14, validShirts = {1}},
+  [173] = {arms = 15, validShirts = {15}},
+  [174] = {arms = 14, validShirts = {15}},
+  [175] = {arms = 15, validShirts = {15}},
+  [176] = {arms = 15, validShirts = {5}},
+  [177] = {arms = 15, validShirts = {15}},
+  [178] = {arms = 14, validShirts = {15}},
+  [179] = {arms = 15, validShirts = {0}},
+  [180] = {arms = 15, validShirts = {15}},
+  [181] = {arms = 14, validShirts = {16}},
+  [182] = {arms = 14, validShirts = {15}},
+  [183] = {arms = 12, validShirts = {32}},
+  [184] = {arms = 12, validShirts = {15}},
+  [185] = {arms = 15, validShirts = {16}},
+  [186] = {arms = 15, validShirts = {16}},
+  [187] = {arms = 12, validShirts = {14}},
+  [188] = {arms = 12, validShirts = {16}},
+  [189] = {arms = 12, validShirts = {16}},
+  [190] = {arms = 12, validShirts = {15}},
+  [191] = {arms = 12, validShirts = {16}},
+  [192] = {arms = 12, validShirts = {16}},
+  [193] = {arms = 11, validShirts = {15}},
+  [194] = {arms = 11, validShirts = {15}},
+  [195] = {arms = 11, validShirts = {15}},
+  [196] = {arms = 11, validShirts = {15}},
+  [197] = {arms = 11, validShirts = {15}},
+  [198] = {arms = 5, validShirts = {15}},
+  [199] = {arms = 5, validShirts = {15}},
+  [200] = {arms = 4, validShirts = {15}},
+  [201] = {arms = 3, validShirts = {15}},
+  [202] = {arms = 5, validShirts = {15}},
+  [203] = {arms = 4, validShirts = {15}},
+  [204] = {arms = 5, validShirts = {2}},
+  [205] = {arms = 5, validShirts = {15}},
+  [206] = {arms = 5, validShirts = {15}},
+  [207] = {arms = 5, validShirts = {15}},
+  [208] = {arms = 0, validShirts = {15}},
+  [209] = {arms = 0, validShirts = {15}},
+  [210] = {arms = 0, validShirts = {15}},
+  [211] = {arms = 0, validShirts = {15}},
+  [212] = {arms = 0, validShirts = {16}},
+  [213] = {arms = 2, validShirts = {15}},
+  [214] = {arms = 1, validShirts = {15}},
+  [215] = {arms = 1, validShirts = {16}},
+  [216] = {arms = 2, validShirts = {16}},
+  [217] = {arms = 1, validShirts = {15}},
+  [218] = {arms = 1, validShirts = {15}},
+  [219] = {arms = 2, validShirts = {15}},
+  [220] = {arms = 2, validShirts = {15}},
+  [221] = {arms = 1, validShirts = {15}},
+  [222] = {arms = 11, validShirts = {15}},
+  [223] = {arms = 5, validShirts = {15}},
+  [224] = {arms = 1, validShirts = {15}},
+  [225] = {arms = 8, validShirts = {15}},
+  [226] = {arms = 0, validShirts = {15}},
+  [227] = {arms = 4, validShirts = {15}},
+  [228] = {arms = 4, validShirts = {15}},
+  [229] = {arms = 4, validShirts = {15}},
+  [230] = {arms = 5, validShirts = {16}},
+  [231] = {arms = 4, validShirts = {71}},
+  [232] = {arms = 4, validShirts = {54}},
+  [233] = {arms = 4, validShirts = {23}},
+  [234] = {arms = 0, validShirts = {15}},
+  [235] = {arms = 0, validShirts = {15}},
+  [236] = {arms = 0, validShirts = {15}},
+  [237] = {arms = 5, validShirts = {15}},
+  [238] = {arms = 5, validShirts = {15}},
+  [239] = {arms = 2, validShirts = {15}},
+  [240] = {arms = 4, validShirts = {21}},
+  [241] = {arms = 0, validShirts = {15}},
+  [242] = {arms = 0, validShirts = {15}},
+  [243] = {arms = 0, validShirts = {15}},
+  [244] = {arms = 1, validShirts = {71}},
+  [245] = {arms = 1, validShirts = {15}},
+  [246] = {arms = 3, validShirts = {15}},
+  [247] = {arms = 5, validShirts = {15}},
+  [248] = {arms = 6, validShirts = {15}},
+  [249] = {arms = 6, validShirts = {15}},
+  [250] = {arms = 0, validShirts = {15}},
+  [251] = {arms = 0, validShirts = {15}},
+  [252] = {arms = 15, validShirts = {15}},
+  [253] = {arms = 15, validShirts = {15}},
+  [254] = {arms = 8, validShirts = {15}},
+  [255] = {arms = 8, validShirts = {15}},
+  [256] = {arms = 8, validShirts = {15}},
+  [257] = {arms = 12, validShirts = {15}},
+  [258] = {arms = 14, validShirts = {20}},
+  [259] = {arms = 14, validShirts = {15}},
+  [260] = {arms = 0, validShirts = {15}},
+  [261] = {arms = 0, validShirts = {16}},
+  [262] = {arms = 0, validShirts = {15}},
+  [263] = {arms = 0, validShirts = {15}},
+  [264] = {arms = 6, validShirts = {2}},
+  [265] = {arms = 0, validShirts = {15}},
+  [266] = {arms = 0, validShirts = {16}},
+  [267] = {arms = 0, validShirts = {16}},
+  [268] = {arms = 0, validShirts = {16}},
+  [269] = {arms = 0, validShirts = {16}},
+  [270] = {arms = 4, validShirts = {15}},
+  [271] = {arms = 0, validShirts = {15}},
+  [272] = {arms = 0, validShirts = {15}},
+  [273] = {arms = 0, validShirts = {15}},
+  [274] = {arms = 3, validShirts = {15}},
+  [275] = {arms = 4, validShirts = {15}},
+  [276] = {arms = 4, validShirts = {15}},
+  [277] = {arms = 164, validShirts = {15}},
+  [278] = {arms = 165, validShirts = {15}},
+  [279] = {arms = 1, validShirts = {15}},
+  [280] = {arms = 1, validShirts = {15}},
+  [281] = {arms = 1, validShirts = {15}},
+  [282] = {arms = 0, validShirts = {15}},
+  [283] = {arms = 166, validShirts = {15}},
+  [284] = {arms = 4, validShirts = {15}},
+  [285] = {arms = 165, validShirts = {15}},
+  [286] = {arms = 167, validShirts = {15}},
+  [287] = {arms = 3, validShirts = {15}},
+  [288] = {arms = 4, validShirts = {15}},
+  [289] = {arms = 2, validShirts = {15}},
+}
+
+Config.FemaleTorsoData = {
+  [0] = {arms = 0, validShirts = {15}},
+  [1] = {arms = 1, validShirts = {11}},
+  [2] = {arms = 11, validShirts = {15}},
+  [3] = {arms = 3, validShirts = {14}},
+  [4] = {arms = 4, validShirts = {15}},
+  [5] = {arms = 4, validShirts = {15}},
+  [6] = {arms = 5, validShirts = {20}},
+  [7] = {arms = 6, validShirts = {20}},
+  [8] = {arms = 1, validShirts = {0}},
+  [9] = {arms = 0, validShirts = {15}},
+  [10] = {arms = 0, validShirts = {16}},
+  [11] = {arms = 4, validShirts = {11}},
+  [12] = {arms = 15, validShirts = {15}},
+  [13] = {arms = 15, validShirts = {15}},
+  [14] = {arms = 14, validShirts = {15}},
+  [15] = {arms = 15, validShirts = {15}},
+  [16] = {arms = 15, validShirts = {15}},
+  [17] = {arms = 9, validShirts = {15}},
+  [18] = {arms = 15, validShirts = {14}},
+  [19] = {arms = 15, validShirts = {15}},
+  [20] = {arms = 1, validShirts = {16}},
+  [21] = {arms = 11, validShirts = {15}},
+  [22] = {arms = 15, validShirts = {14}},
+  [23] = {arms = 15, validShirts = {15}},
+  [24] = {arms = 5, validShirts = {0}},
+  [25] = {arms = 6, validShirts = {0}},
+  [26] = {arms = 15, validShirts = {15}},
+  [27] = {arms = 0, validShirts = {15}},
+  [28] = {arms = 0, validShirts = {24}},
+  [29] = {arms = 14, validShirts = {32}},
+  [30] = {arms = 2, validShirts = {15}},
+  [31] = {arms = 5, validShirts = {16}},
+  [32] = {arms = 15, validShirts = {15}},
+  [33] = {arms = 15, validShirts = {15}},
+  [34] = {arms = 7, validShirts = {11}},
+  [35] = {arms = 9, validShirts = {11}},
+  [36] = {arms = 15, validShirts = {15}},
+  [37] = {arms = 15, validShirts = {15}},
+  [38] = {arms = 2, validShirts = {15}},
+  [39] = {arms = 1, validShirts = {15}},
+  [40] = {arms = 2, validShirts = {15}},
+  [41] = {arms = 1, validShirts = {15}},
+  [42] = {arms = 1, validShirts = {15}},
+  [43] = {arms = 3, validShirts = {15}},
+  [44] = {arms = 3, validShirts = {15}},
+  [45] = {arms = 3, validShirts = {15}},
+  [46] = {arms = 3, validShirts = {15}},
+  [47] = {arms = 5, validShirts = {15}},
+  [48] = {arms = 14, validShirts = {15}},
+  [49] = {arms = 14, validShirts = {15}},
+  [50] = {arms = 14, validShirts = {15}},
+  [51] = {arms = 14, validShirts = {37}},
+  [52] = {arms = 14, validShirts = {37}},
+  [53] = {arms = 14, validShirts = {37}},
+  [54] = {arms = 5, validShirts = {15}},
+  [55] = {arms = 5, validShirts = {15}},
+  [56] = {arms = 2, validShirts = {15}},
+  [57] = {arms = 5, validShirts = {38}},
+  [58] = {arms = 5, validShirts = {21}},
+  [59] = {arms = 3, validShirts = {8}},
+  [60] = {arms = 3, validShirts = {8}},
+  [61] = {arms = 3, validShirts = {8}},
+  [62] = {arms = 7, validShirts = {15}},
+  [63] = {arms = 7, validShirts = {15}},
+  [64] = {arms = 6, validShirts = {16}},
+  [65] = {arms = 6, validShirts = {13}},
+  [66] = {arms = 6, validShirts = {14}},
+  [67] = {arms = 2, validShirts = {15}},
+  [68] = {arms = 14, validShirts = {15}},
+  [69] = {arms = 7, validShirts = {15}},
+  [70] = {arms = 7, validShirts = {15}},
+  [71] = {arms = 9, validShirts = {15}},
+  [72] = {arms = 9, validShirts = {15}},
+  [73] = {arms = 14, validShirts = {15}},
+  [74] = {arms = 15, validShirts = {15}}, 
+  [75] = {arms = 9, validShirts = {15}},
+  [76] = {arms = 9, validShirts = {14}},
+  [77] = {arms = 9, validShirts = {14}},
+  [78] = {arms = 9, validShirts = {14}},
+  [79] = {arms = 9, validShirts = {14}},
+  [80] = {arms = 9, validShirts = {14}},
+  [81] = {arms = 9, validShirts = {14}},
+  [82] = {arms = 15, validShirts = {32}},
+  [83] = {arms = 9, validShirts = {9}},
+  [84] = {arms = 0, validShirts = {0}},
+  [85] = {arms = 0, validShirts = {15}},
+  [86] = {arms = 0, validShirts = {15}},
+  [87] = {arms = 9, validShirts = {14}},
+  [88] = {arms = 0, validShirts = {14}},
+  [89] = {arms = 0, validShirts = {14}},
+  [90] = {arms = 6, validShirts = {0}},
+  [91] = {arms = 6, validShirts = {0}},
+  [92] = {arms = 5, validShirts = {0}},
+  [93] = {arms = 5, validShirts = {38}},
+  [94] = {arms = 9, validShirts = {48}},
+  [95] = {arms = 5, validShirts = {38}},
+  [96] = {arms = 2, validShirts = {9}},
+  [97] = {arms = 6, validShirts = {0}},
+  [98] = {arms = 6, validShirts = {0}},
+  [99] = {arms = 6, validShirts = {0}},
+  [100] = {arms = 11, validShirts = {0}},
+  [101] = {arms = 15, validShirts = {14}},
+  [102] = {arms = 9, validShirts = {14}},
+  [103] = {arms = 7, validShirts = {14}},
+  [104] = {arms = 3, validShirts = {76}},
+  [105] = {arms = 15, validShirts = {15}},
+  [106] = {arms = 7, validShirts = {15}},
+  [107] = {arms = 7, validShirts = {0}},
+  [108] = {arms = 7, validShirts = {1}},
+  [109] = {arms = 7, validShirts = {1}},
+  [110] = {arms = 7, validShirts = {1}},
+  [111] = {arms = 15, validShirts = {14}},
+  [112] = {arms = 15, validShirts = {15}},
+  [113] = {arms = 15, validShirts = {15}},
+  [114] = {arms = 15, validShirts = {14}},
+  [115] = {arms = 15, validShirts = {15}},
+  [116] = {arms = 15, validShirts = {14}},
+  [117] = {arms = 11, validShirts = {15}},
+  [118] = {arms = 11, validShirts = {15}},
+  [119] = {arms = 11, validShirts = {15}},
+  [120] = {arms = 9, validShirts = {11}},
+  [121] = {arms = 9, validShirts = {11}},
+  [122] = {arms = 9, validShirts = {10}},
+  [123] = {arms = 9, validShirts = {11}},
+  [124] = {arms = 14, validShirts = {14}},
+  [125] = {arms = 0, validShirts = {14}},
+  [126] = {arms = 1, validShirts = {14}},
+  [127] = {arms = 3, validShirts = {3}},
+  [128] = {arms = 14, validShirts = {3}},
+  [129] = {arms = 14, validShirts = {3}},
+  [130] = {arms = 14, validShirts = {3}},
+  [131] = {arms = 14, validShirts = {3}},
+  [132] = {arms = 14, validShirts = {3}},
+  [133] = {arms = 7, validShirts = {20}},
+  [134] = {arms = 3, validShirts = {65}},
+  [135] = {arms = 3, validShirts = {14}},
+  [136] = {arms = 3, validShirts = {14}},
+  [137] = {arms = 5, validShirts = {13}},
+  [138] = {arms = 6, validShirts = {0}},
+  [139] = {arms = 6, validShirts = {0}},
+  [140] = {arms = 5, validShirts = {3}},
+  [141] = {arms = 0, validShirts = {3}},
+  [142] = {arms = 0, validShirts = {3}},
+  [143] = {arms = 4, validShirts = {3}},
+  [144] = {arms = 9, validShirts = {14}},
+  [145] = {arms = 9, validShirts = {14}},
+  [146] = {arms = 7, validShirts = {14}},
+  [147] = {arms = 2, validShirts = {14}},
+  [148] = {arms = 5, validShirts = {0}},
+  [149] = {arms = 3, validShirts = {3}},
+  [150] = {arms = 3, validShirts = {3}},
+  [151] = {arms = 3, validShirts = {3}},
+  [152] = {arms = 7, validShirts = {3}},
+  [153] = {arms = 7, validShirts = {0}},
+  [154] = {arms = 12, validShirts = {0}},
+  [155] = {arms = 12, validShirts = {0}},
+  [156] = {arms = 12, validShirts = {0}},
+  [157] = {arms = 12, validShirts = {0}},
+  [158] = {arms = 9, validShirts = {0}},
+  [159] = {arms = 12, validShirts = {0}},
+  [160] = {arms = 6, validShirts = {0}},
+  [161] = {arms = 2, validShirts = {14}},
+  [162] = {arms = 1, validShirts = {14}},
+  [163] = {arms = 1, validShirts = {16}},
+  [164] = {arms = 1, validShirts = {16}},
+  [165] = {arms = 1, validShirts = {16}},
+  [166] = {arms = 1, validShirts = {16}},
+  [167] = {arms = 4, validShirts = {16}},
+  [168] = {arms = 4, validShirts = {14}},
+  [169] = {arms = 4, validShirts = {14}},
+  [170] = {arms = 4, validShirts = {14}},
+  [171] = {arms = 4, validShirts = {14}},
+  [172] = {arms = 3, validShirts = {14}},
+  [173] = {arms = 4, validShirts = {15}},
+  [174] = {arms = 4, validShirts = {13}},
+  [175] = {arms = 4, validShirts = {13}},
+  [176] = {arms = 15, validShirts = {15}}, 
+  [177] = {arms = 4, validShirts = {15}},
+  [178] = {arms = 12, validShirts = {15}},
+  [179] = {arms = 11, validShirts = {10}},
+  [180] = {arms = 9, validShirts = {14}},
+  [181] = {arms = 4, validShirts = {26}},
+  [182] = {arms = 4, validShirts = {25}},
+  [183] = {arms = 4, validShirts = {20}},
+  [184] = {arms = 14, validShirts = {14}},
+  [185] = {arms = 6, validShirts = {5}},
+  [186] = {arms = 15, validShirts = {16}},
+  [187] = {arms = 6, validShirts = {51}},
+  [188] = {arms = 6, validShirts = {47}},
+  [189] = {arms = 6, validShirts = {69}},
+  [190] = {arms = 6, validShirts = {69}},
+  [191] = {arms = 6, validShirts = {72}},
+  [192] = {arms = 12, validShirts = {68}},
+  [193] = {arms = 12, validShirts = {69}},
+  [194] = {arms = 11, validShirts = {57}},
+  [195] = {arms = 15, validShirts = {17}},
+  [196] = {arms = 3, validShirts = {17}},
+  [197] = {arms = 3, validShirts = {17}},
+  [198] = {arms = 4, validShirts = {17}},
+  [199] = {arms = 4, validShirts = {17}},
+  [200] = {arms = 4, validShirts = {17}},
+  [201] = {arms = 4, validShirts = {17}},
+  [202] = {arms = 14, validShirts = {14}},
+  [203] = {arms = 13, validShirts = {9}},
+  [204] = {arms = 11, validShirts = {9}},
+  [205] = {arms = 11, validShirts = {9}},
+  [206] = {arms = 6, validShirts = {9}},
+  [207] = {arms = 11, validShirts = {9}},
+  [208] = {arms = 11, validShirts = {9}},
+  [209] = {arms = 11, validShirts = {9}},
+  [210] = {arms = 11, validShirts = {9}},
+  [211] = {arms = 11, validShirts = {9}},
+  [212] = {arms = 14, validShirts = {9}},
+  [213] = {arms = 3, validShirts = {9}},
+  [214] = {arms = 3, validShirts = {9}},
+  [215] = {arms = 3, validShirts = {9}},
+  [216] = {arms = 5, validShirts = {121}},
+  [217] = {arms = 4, validShirts = {72}},
+  [218] = {arms = 3, validShirts = {70}},
+  [219] = {arms = 3, validShirts = {123}},
+  [220] = {arms = 4, validShirts = {123}},
+  [221] = {arms = 4, validShirts = {122}},
+  [222] = {arms = 4, validShirts = {122}},
+  [223] = {arms = 15, validShirts = {122}},
+  [224] = {arms = 14, validShirts = {9}},
+  [225] = {arms = 15, validShirts = {9}},
+  [226] = {arms = 11, validShirts = {9}},
+  [227] = {arms = 7, validShirts = {9}},
+  [228] = {arms = 7, validShirts = {9}},
+  [229] = {arms = 11, validShirts = {9}},
+  [230] = {arms = 9, validShirts = {9}},
+  [231] = {arms = 9, validShirts = {9}},
+  [232] = {arms = 9, validShirts = {9}},
+  [233] = {arms = 11, validShirts = {27}},
+  [234] = {arms = 7, validShirts = {27}},
+  [235] = {arms = 9, validShirts = {14}},
+  [236] = {arms = 14, validShirts = {14}},
+  [237] = {arms = 14, validShirts = {14}},
+  [238] = {arms = 0, validShirts = {14}},
+  [239] = {arms = 0, validShirts = {14}},
+  [240] = {arms = 5, validShirts = {26}},
+  [241] = {arms = 3, validShirts = {8}},
+  [242] = {arms = 6, validShirts = {8}},
+  [243] = {arms = 6, validShirts = {26}},
+  [244] = {arms = 0, validShirts = {14}},
+  [245] = {arms = 0, validShirts = {14}},
+  [246] = {arms = 0, validShirts = {14}},
+  [247] = {arms = 4, validShirts = {14}},
+  [248] = {arms = 6, validShirts = {20}},
+  [249] = {arms = 0, validShirts = {19}},
+  [250] = {arms = 0, validShirts = {19}},
+  [251] = {arms = 0, validShirts = {19}},
+  [252] = {arms = 0, validShirts = {19}},
+  [253] = {arms = 14, validShirts = {19}},
+  [254] = {arms = 8, validShirts = {9}},
+  [255] = {arms = 4, validShirts = {9}},
+  [256] = {arms = 4, validShirts = {9}},
+  [257] = {arms = 3, validShirts = {9}},
+  [258] = {arms = 14, validShirts = {9}},
+  [259] = {arms = 14, validShirts = {9}},
+  [260] = {arms = 15, validShirts = {9}},
+  [261] = {arms = 15, validShirts = {9}},
+  [262] = {arms = 7, validShirts = {9}},
+  [263] = {arms = 14, validShirts = {14}},
+  [264] = {arms = 3, validShirts = {6}},
+  [265] = {arms = 3, validShirts = {6}},
+  [266] = {arms = 3, validShirts = {6}},
+  [267] = {arms = 4, validShirts = {6}},
+  [268] = {arms = 4, validShirts = {6}},
+  [269] = {arms = 4, validShirts = {6}},
+  [270] = {arms = 4, validShirts = {0}},
+  [271] = {arms = 3, validShirts = {3}},
+  [272] = {arms = 3, validShirts = {3}},
+  [273] = {arms = 5, validShirts = {3}},
+  [274] = {arms = 5, validShirts = {3}},
+  [275] = {arms = 5, validShirts = {20}},
+  [276] = {arms = 6, validShirts = {20}},
+  [277] = {arms = 6, validShirts = {26}},
+  [278] = {arms = 6, validShirts = {26}},
+  [279] = {arms = 15, validShirts = {14}},
+  [280] = {arms = 14, validShirts = {14}},
+  [281] = {arms = 14, validShirts = {14}},
+  [282] = {arms = 14, validShirts = {14}},
+  [283] = {arms = 12, validShirts = {14}},
+  [284] = {arms = 4, validShirts = {14}},
+  [285] = {arms = 3, validShirts = {14}},
+  [286] = {arms = 0, validShirts = {14}},
+  [287] = {arms = 8, validShirts = {14}},
+  [288] = {arms = 3, validShirts = {14}},
+  [289] = {arms = 3, validShirts = {14}},
+  [290] = {arms = 3, validShirts = {14}},
+  [291] = {arms = 3, validShirts = {14}},
+  [292] = {arms = 3, validShirts = {14}},
+  [293] = {arms = 3, validShirts = {14}},
+  [294] = {arms = 4, validShirts = {14}},
+  [295] = {arms = 14, validShirts = {14}},
+  [296] = {arms = 207, validShirts = {14}},
+  [297] = {arms = 215, validShirts = {14}},
+  [298] = {arms = 3, validShirts = {14}},
+  [299] = {arms = 3, validShirts = {14}},
+  [300] = {arms = 8, validShirts = {14}},
+  [301] = {arms = 11, validShirts = {14}},
+  [302] = {arms = 11, validShirts = {14}},
+}
