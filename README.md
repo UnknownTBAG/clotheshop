@@ -11,6 +11,6 @@
 
 **Dependencies**
 
-* ESX
-* [NativeUILua_Reloaded](https://mega.nz/folder/KEUkCK4b#oLl_ZQpWbFzZU31osytCig)
-* [skinchanger](https://mega.nz/folder/6YFxATBC#Nd4KbkeTHO0ZGB-NMTt-dw)
+* ESX or QB
+* [NativeUILua_Reloaded](https://forum.cfx.re/uploads/short-url/yoOXmax3kpndY53KqSASSSfiMf3.zip))
+* [skinchanger](https://github.com/mitlight/skinchanger))
